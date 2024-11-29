@@ -131,7 +131,7 @@ def noepyLoadModel(data, mdlList):
     model.setModelMaterials(NoeModelMaterials(textures, materials))
     model.setBones(bones)
     mdlList.append(model)
-    rapi.setPreviewOption("setAngOfs", "0 -90 -90")#delete for Ice Age
+    rapi.setPreviewOption("setAngOfs", "0 90 -90")#delete for Ice Age
     return 1
     
 def string(bs):
