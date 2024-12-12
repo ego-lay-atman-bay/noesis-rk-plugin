@@ -10,19 +10,40 @@ as well as applying some properties on the materials found in the .rkm files.
 
 from inc_noesis import *
 import csv
+import os
 
 def registerNoesisTypes():
     handle = noesis.register("My Little Pony Gameloft", ".rk") # and Ice Age Adventures  
     noesis.setHandlerTypeCheck(handle, noepyCheckType)
     noesis.setHandlerLoadModel(handle, noepyLoadModel)
     
-    # noesis.logPopup()
+    noesis.logPopup()
     return 1
     
 def noepyCheckType(data):
     if data[:8] != b'RKFORMAT':
         return 0
     return 1
+
+def split_name_num(name):
+    head = name.rstrip('0123456789#')
+    tail = name[len(head):]
+    return head, tail
+
+def increase_name_num(name):
+    head, tail = split_name_num(name)
+    number = 0
+
+    if tail:
+        number = int(tail)
+        number += 1
+        return '{head}{number:0{length}d}'.format(
+            head = head,
+            number = number,
+            length = len(tail),
+        )
+    else:
+        return name
     
 def noepyLoadModel(data, mdlList):
     bitstream = NoeBitStream(data)
@@ -51,20 +72,28 @@ def noepyLoadModel(data, mdlList):
     materials, textures = [], []
     for x in range(header[2][1]):
         texture_name = string(bitstream)
+        if texture_name == '':
+            texture_name = increase_name_num(materials[-1].name)
         material, texture = loadMaterial(texture_name)
-        materials.append(material)
-        textures.append(texture)
+        if material is None:
+            materials.append(materials[-1])
+        else:
+            materials.append(material)
+        if texture is None:
+            textures.append(textures[-1])
+        else:
+            textures.append(texture)
     
     #attr - (type,ofs,size)
     bitstream.seek(header[13][0])
-    uo, ufmt = -1, -1
+    uv_offset, uv_data_type = -1, -1
     for x in range(header[13][1]):
         i = bitstream.read('H2B')
         if i[0] == 1030:
-            uo, ufmt = i[1], noesis.RPGEODATA_USHORT
+            uv_offset, uv_data_type = i[1], noesis.RPGEODATA_USHORT
             rapi.rpgSetUVScaleBias(NoeVec3([2]*3), None)
         elif i[0] == 1026:
-            uo, ufmt = i[1], noesis.RPGEODATA_FLOAT
+            uv_offset, uv_data_type = i[1], noesis.RPGEODATA_FLOAT
             rapi.rpgSetUVScaleBias(None, None)
     
     submesh_names = []
@@ -89,8 +118,8 @@ def noepyLoadModel(data, mdlList):
     #rapi.rpgSetMaterial(mList[0].name)
     rapi.rpgBindPositionBuffer(position_buffer, noesis.RPGEODATA_FLOAT, stride)
     #print('uo:',uo)
-    if uo != -1:
-        rapi.rpgBindUV1BufferOfs(position_buffer, ufmt, stride, uo)
+    if uv_offset != -1:
+        rapi.rpgBindUV1BufferOfs(position_buffer, uv_data_type, stride, uv_offset)
 
     bones = []
     if header[7][1]:
@@ -107,24 +136,23 @@ def noepyLoadModel(data, mdlList):
         index_buffer = bitstream.read(header[17][2])
         stride = header[17][2]//header[17][1]
         rapi.rpgBindBoneIndexBuffer(index_buffer, noesis.RPGEODATA_UBYTE, stride, 2)
-        print('byte', noesis.RPGEODATA_UBYTE)
         rapi.rpgBindBoneWeightBufferOfs(index_buffer, noesis.RPGEODATA_USHORT, stride, 4, 2)
         
     bitstream.seek(header[4][0])
     #ibuf = bs.read(h[4][2])
     #print('h:', h)
     #print('vnum:', h[3][2], 'inum:', h[4][1], 'isize:', h[4][2])
-    ifmt, istride = noesis.RPGEODATA_USHORT, 2
+    index_format, index_stride = noesis.RPGEODATA_USHORT, 2
     if header[3][1] > 65535:
-        ifmt, istride = noesis.RPGEODATA_UINT, 4
+        index_format, index_stride = noesis.RPGEODATA_UINT, 4
     
     #rapi.rpgCommitTriangles(ibuf, ifmt, h[4][1], noesis.RPGEO_TRIANGLE)
     for x in submesh_names:
         print(x)
         rapi.rpgSetName(x[0])
         rapi.rpgSetMaterial(materials[x[1][2]].name)
-        ibuf = bitstream.read(x[1][0]*3*istride)
-        rapi.rpgCommitTriangles(ibuf, ifmt, x[1][0]*3, noesis.RPGEO_TRIANGLE)
+        ibuf = bitstream.read(x[1][0]*3*index_stride)
+        rapi.rpgCommitTriangles(ibuf, index_format, x[1][0]*3, noesis.RPGEO_TRIANGLE)
     
     rapi.rpgSetOption(noesis.RPGOPT_TRIWINDBACKWARD, 1)#delete for Ice Age
     model = rapi.rpgConstructModel()  
@@ -150,6 +178,12 @@ def loadMaterial(material_name):
         'alpha': ('GL_SRC_ALPHA_SATURATE', 'GL_DST_ALPHA_SATURATE'),
         'add': ('GL_FUNC_ADD','GL_FUNC_ADD'),
     }
+    
+    print('material', repr(material_name))
+    print('filename', filename)
+    
+    if material_name == '' or not os.path.exists(filename):
+        return None, None
     
     rkm = parse_rkm(filename)
     texture_name = rkm.get('DiffuseTexture')
