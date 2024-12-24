@@ -71,9 +71,9 @@ def noepyLoadModel(data, mdlList):
     bitstream.seek(header[2][0])
     materials, textures = [], []
     for x in range(header[2][1]):
-        texture_name = string(bitstream)
-        if texture_name == '':
-            texture_name = increase_name_num(materials[-1].name)
+        texture_name = string(bitstream, header[2][2] // header[2][1])
+        # if texture_name == '':
+        #     texture_name = increase_name_num(materials[-1].name)
         material, texture = loadMaterial(texture_name)
         if material is None:
             materials.append(materials[-1])
@@ -162,8 +162,8 @@ def noepyLoadModel(data, mdlList):
     rapi.setPreviewOption("setAngOfs", "0 90 -90")#delete for Ice Age
     return 1
     
-def string(bs):
-    return bs.read(64).split(b'\x00')[0].decode('ascii', errors='ignore')
+def string(bs, length = 64):
+    return bs.read(length).split(b'\x00')[0].decode('ascii', errors='ignore')
 
 def parse_rkm(filename):
     with open(filename, 'r', newline = '') as file:
